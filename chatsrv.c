@@ -1,5 +1,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -7,8 +8,17 @@
 #include <stdio.h>
 #include "log.h"
 
+#define MAX_THREADS 10
+
+/* Function prototypes */
+void proc_client(int client_sockfd);
+
 int main()
 {
+	int i = 0;
+	int ret = 0;
+	int curr_thread_count = 0;
+	pthread_t threads[MAX_THREADS];
 	int server_sockfd, client_sockfd;
 	int server_len, client_len;
 	struct sockaddr_in server_address;
@@ -44,15 +54,47 @@ int main()
 		/* A connection between a client and the server has been established.
 		 * Now create a new thread and handover the client_sockfd
 		 */
-		
-
-
-		/* Read and write to client */
-		read(client_sockfd, &ch, 1);
-		ch++;
-		write(client_sockfd, &ch, 1);
-		close(client_sockfd);
+		ret = pthread_create(&threads[curr_thread_count],
+			NULL,
+			(void *)&proc_client, 
+			(void *)&client_sockfd);
+			
+		if (ret == 0)
+			curr_thread_count++;
+	}
+	
+	for (i = 0; i < curr_thread_count; i++)
+	{
+		pthread_join(threads[i], NULL);
 	}
 
 	return 0;
 }
+
+void proc_client(int client_sockfd)
+{
+	char buffer[1024];
+
+	printf("Foo!\n");
+
+	while (1)
+	{
+		int len = 0;
+		//ioctl(client_sockfd, FIONREAD, &len);
+		//if (len > 0) {
+	  	//	printf("Has text\n");
+	  		len = read(client_sockfd, buffer, 1023);
+	  		if (len > 0) {
+	  		/* Terminate the data buffer */
+	  		buffer[1024] = '\0';
+	  		
+	  		/* Print out message on console */
+	  		//logline(LOG_INFO, "Received: %s", buffer);
+	  		printf("Received: %s", buffer);
+	  		}
+  		//}
+	}
+}
+
+
+

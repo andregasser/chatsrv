@@ -11,6 +11,10 @@
  * Include file for linked list with threads support
  */
 #include <pthread.h>
+#include "rdwr.h"
+
+#define TRUE  1
+#define FALSE 0
 
 typedef struct llist_node {
 	int index;
@@ -20,7 +24,8 @@ typedef struct llist_node {
 
 typedef struct llist { 
 	llist_node_t *first;
-	pthread_mutex_t mutex;
+	//pthread_mutex_t mutex;	
+	pthread_rdwr_t rwlock;
 } llist_t;
 
 int llist_init(llist_t *llistp);

@@ -1,4 +1,4 @@
-.PHONY : log.o dns.o dnsmap.o dnsmap 
+.PHONY : log.o rdwr.o llist.o chatsrv.o chatsrv 
 
 # Set compiler to use
 CC=gcc
@@ -11,11 +11,17 @@ else
 	CFLAGS+=-O2
 endif
 
-chatsrv : log.o chatsrv.o
-	$(CC) $(CFLAGS) -o chatsrv log.o chatsrv.o -lpthread
+chatsrv : log.o llist.o chatsrv.o
+	$(CC) $(CFLAGS) -o chatsrv log.o rdwr.o llist.o chatsrv.o -lpthread
 
-chatsrv.o : log.o
+chatsrv.o : log.o llist.o
 	$(CC) $(CFLAGS) -c chatsrv.c -o chatsrv.o
+
+llist.o: rdwr.o
+	$(CC) $(CFLAGS) -c llist.c -o llist.o
+
+rdwr.o:
+	$(CC) $(CFLAGS) -c rdwr.c -o rdwr.o
 
 log.o :
 	$(CC) $(CFLAGS) -c log.c -o log.o
