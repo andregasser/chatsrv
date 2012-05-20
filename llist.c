@@ -20,8 +20,6 @@ int llist_init(llist_t *llistp)
 	int rtn;
 
 	llistp->first = NULL;
-	//if ((rtn = pthread_mutex_init(&(llistp->mutex), NULL)) != 0)
-	//	fprintf(stderr, "pthread_mutex_init error %d", rtn), exit(1);
 	if ((rtn = pthread_rdwr_init_np(&(llistp->rwlock), NULL)) != 0)
 		fprintf(stderr, "pthread_rdwr_init_np error %d", rtn), exit(1);
 
@@ -33,7 +31,6 @@ int llist_insert_data(int index, void *datap, llist_t *llistp)
 	llist_node_t *cur, *prev, *new;
 	int found = FALSE;
 
-	//pthread_mutex_lock(&(llistp->mutex));
 	pthread_rdwr_wlock_np(&(llistp->rwlock));
 
 	for (cur = prev = llistp->first; cur != NULL; prev = cur, cur = cur->nextp) 
@@ -63,7 +60,6 @@ int llist_insert_data(int index, void *datap, llist_t *llistp)
 			prev->nextp = new;
 	}
 
-	//pthread_mutex_unlock(&(llistp->mutex));
 	pthread_rdwr_wunlock_np(&(llistp->rwlock));
 
 	return 0;
@@ -76,7 +72,6 @@ int llist_remove_data(int index, void **datapp, llist_t *llistp)
 	/* Initialize to "not found" */
 	*datapp = NULL;
 
-	//pthread_mutex_lock(&(llistp->mutex));
 	pthread_rdwr_wlock_np(&(llistp->rwlock));
 
 	for (cur = prev = llistp->first; cur != NULL; prev = cur, cur = cur->nextp)
@@ -94,7 +89,6 @@ int llist_remove_data(int index, void **datapp, llist_t *llistp)
 		}
 	}
 
-	//pthread_mutex_unlock(&(llistp->mutex));
 	pthread_rdwr_wunlock_np(&(llistp->rwlock));
 
 	return 0;
@@ -107,7 +101,6 @@ int llist_find_data(int index, void **datapp, llist_t *llistp)
 	/* Initialize to "not found" */
 	*datapp = NULL;
 
-	//pthread_mutex_lock(&(llistp->mutex));
 	pthread_rdwr_rlock_np(&(llistp->rwlock));
 
 	/* Look through index for our entry */
@@ -124,7 +117,6 @@ int llist_find_data(int index, void **datapp, llist_t *llistp)
 		}
 	}
 
-	//pthread_mutex_unlock(&(llistp->mutex));
 	pthread_rdwr_runlock_np(&(llistp->rwlock));
 
 	return 0;
@@ -135,7 +127,6 @@ int llist_change_data(int index, void *datap, llist_t *llistp)
 	llist_node_t *cur, *prev;
 	int status = -1; /* assume failure */
 
-	//pthread_mutex_lock(&(llistp->mutex));
 	pthread_rdwr_wlock_np(&(llistp->rwlock));
 
 	for (cur = prev = llistp->first; cur != NULL; prev = cur, cur = cur->nextp) 
@@ -154,7 +145,6 @@ int llist_change_data(int index, void *datap, llist_t *llistp)
 		}
 	}
 
-	//pthread_mutex_unlock(&(llistp->mutex));
 	pthread_rdwr_wunlock_np(&(llistp->rwlock));
 
 	return status;
@@ -164,7 +154,6 @@ int llist_show(llist_t *llistp)
 {
 	llist_node_t *cur;
 
-	//pthread_mutex_lock(&(llistp->mutex));
 	pthread_rdwr_rlock_np(&(llistp->rwlock));
 
 	printf (" Linked list contains : \n");
@@ -173,10 +162,25 @@ int llist_show(llist_t *llistp)
 		printf ("Index: %d\tData: %s \n", cur->index, cur->datap);    
 	}
 
-	//pthread_mutex_unlock(&(llistp->mutex));
 	pthread_rdwr_runlock_np(&(llistp->rwlock));
 
 	return 0;
 }
 
 
+int llist_get_count(llist_t *llistp)
+{
+	llist_node_t *cur;
+	int count = 0;
+	
+	pthread_rdwr_rlock_np(&(llistp->rwlock));
+	
+	for (cur = llistp->first; cur != NULL; cur = cur->nextp)
+	{
+		count++;
+	}	
+	
+	pthread_rdwr_runlock_np(&(llistp->rwlock));
+	
+	return count;
+}

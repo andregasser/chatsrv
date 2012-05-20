@@ -24,7 +24,6 @@ typedef struct llist_node {
 
 typedef struct llist { 
 	llist_node_t *first;
-	//pthread_mutex_t mutex;	
 	pthread_rdwr_t rwlock;
 } llist_t;
 
@@ -34,3 +33,4 @@ int llist_remove_data(int index, void **datapp, llist_t *llistp);
 int llist_find_data(int index, void **datapp, llist_t *llistp);
 int llist_change_data(int index, void *datap, llist_t *llistp);
 int llist_show(llist_t *llistp);
+int llist_get_count(llist_t *llistp);
