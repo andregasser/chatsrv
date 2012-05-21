@@ -1,0 +1,281 @@
+                               ==CHATSRV==
+
+                        Version 0.1 / 20.05.2012
+
+--=[ Disclaimer ]=-----------------------------------------------------//
+
+This document describes CHATSRV, a tool which serves as a multi-threaded
+chat server written in C. 
+
+The author of this document provides the software AS IS and and cannot 
+be made responsible for any damage that may occur while using this tool.
+
+This software may contain errors or may not work properly in certain
+circumstances. Therefore, use this tool at your own risk. 
+
+You can use this tool free of charge and you are allowed to freely
+modify and distribute it. Please check section "License" for more
+details.
+
+
+--[ Contents ]----------------------------------------------------------
+
+1 - Introduction
+
+2 - The Tool
+  2.1 - Features
+  2.2 - Usage
+    2.2.1 - Command-line Arguments
+	2.2.2 - Starting the Chat Server
+	2.2.3 - Connecting to the Chat Server
+	2.2.4 - Disconnecting from the Chat Server
+    2.2.5 - Shutting Down the Chat Server
+  2.3 - Supported Chat Commands
+  2.4 - Building from Source
+  2.5 - License
+  2.6 - Source Code Repository
+  2.7 - Reporting Bugs and Features
+
+3 - Bibliography
+
+4 - Contact
+
+
+--[ 1 - Introduction ]--------------------------------------------------
+
+CHATSRV serves as an example on how to implement a chat server in C. 
+Special features include:
+
+
+--[ 2 - The Tool ]------------------------------------------------------
+
+----[ 2.1 - Features ]--------------------------------------------------
+
+The current version of CHATSRV offers the following features:
+
+  + Multi-Threading:
+    CHATSRV is implemented as a multi-threaded chat server. For each 
+    incoming client connection, a new thread will be created, which
+    handles incoming messages from clients. 
+  
+  + Advanced Logging
+    CHATSRV uses a special logging mechanism, which allows to print log
+    messages on the server console using different log levels. Supported
+    log levels include ERROR, INFO and DEBUG. Each log message includes
+    a detailled timestamp.
+  
+  + Fast Reuse of Sockets
+    After shutting down CHATSRV, its TCP connection is held in a 
+    TIME_WAIT state for a certain amount of time (depends on OS). This 
+    can become unhandy if the server shall be restarted and the service 
+    interruption shall be kept at a minimum. Therefore, CHATSRV 
+    implements a special behaviour, which allows for faster reuse of a 
+    previously used TCP port to bring the server back online very fast.
+  
+  + Graceful Server Shutdown Using Signals
+    CHATSRV implements signal handling capabilities which allow a
+    server administrator to perform a graceful shutdown. After receiving
+    either the SIGINT or the SIGTERM signal, CHATSRV cleans up allocated
+    memory, closes socket connections and terminates running threats. 
+    Then it terminates itself and returns to the shell.
+
+  + Joiner / Leaver Notification
+    If a user joins or leaves the chat server, all other users will be
+    notified.
+    
+  + Support for Nickname Change
+    Users can change their nicknames during a chat session. All other
+    users will be notified about this change.
+  
+
+----[ 2.2 - Usage ]-----------------------------------------------------
+
+This chapter explains basic usage of CHATSRV.
+
+
+----[ 2.2.1 - Command-line Arguments ]----------------------------------
+
+The following command-line arguments are supported:
+
+--ip=<ip address>, -i <ip address>
+	
+	Specifies the ip address which shall be used by CHATSRV. If no ip
+	address is specified, 127.0.0.1 will be used by default.
+
+--port=<port number>, -p <port number>
+
+    Specifies the TCP port to be used by CHATSRV. If no port is
+    specified, port 5555 will be used by default.
+
+--loglevel=<level>, -l <level>         
+
+    Specifies the desired log level. The following levels are supported:
+        1 = ERROR (Log errors only)
+        2 = INFO (Log additional information)
+        3 = DEBUG (Log debug level information)
+        
+    If no log level is specified, INFO will be used by default.
+
+--version, -v
+
+    Displays version information.
+
+--help, -h 
+
+    Display help page.
+
+
+----[ 2.2.2 - Starting the Chat Server ]--------------------------------
+
+Usage of this tool is quite simple. Do start the chat server, simply 
+issue the following command on the shell:
+
+$ ./chatsrv
+
+This starts CHATSRV using its default configuration. Use the following
+command, if you would like to specify ip address and port:
+
+$ ./chatsrv --ip=127.0.0.1 --port=8888
+
+This starts CHATSRV on ip address 127.0.0.1, listening on port 8888.
+
+
+----[ 2.2.3 - Connecting to the Chat Server ]---------------------------
+
+In order to be able to chat with others, you must connect to CHATSRV
+first. to do this, you'll only need a simple telnet client:
+
+$ telnet 127.0.0.1 5555
+
+This connects you to the chat server running on 127.0.0.1, port 5555.
+You can now start entering your messages. Your messages will be
+broadcasted to all other logged in users on this chat server.
+
+
+----[ 2.2.4 - Disconnecting from the Chat Server ]----------------------
+
+To disconnect from the chat server, issue the following command
+In order to be able to chat with others, you must connect to CHATSRV
+first. to do this, you'll only need a simple telnet client:
+
+$ telnet 127.0.0.1 5555
+
+
+----[ 2.2.5 - Shutting Down the Chat Server ]---------------------------
+
+The proper way to shutdown the chat server is either by entering
+Ctrl + C on the console screen of the running CHATSRV program or by
+sending a SIGINT or SIGTERM signal to the CHATSRV process by using the
+kill command as an example:
+
+$ ./kill -s SIGTERM 4344
+
+This sends the SIGTERM to the process running using a PID of 4344. 
+
+
+----[ 2.3 - Supported Chat Commands ]-----------------------------------
+
+The chat server recognizes the following commands from clients:
+
+/nick <nickname>
+
+    Allows the user to change his nickname to <nickname>.
+    
+/quit
+
+    Disconnects the user from the chat server.
+
+
+----[ 2.4 - Building from Source ]--------------------------------------
+
+Befor you can build the tool from source, your system must meet some
+preconditions. Currently they are:
+
+  + gcc must be installed.
+  + make must be installed.
+
+The source distribution can be built from source by conducting the
+following steps on your box:
+
+  1. Copy the file chatsrv-<version>.tar.gz to your linux box. Make
+     sure, it is located in a dedicated directory, since extraction
+	 will put the files directly in there.
+
+  2. Extract the tarball using:
+
+     $ tar xvf chatsrv-<version>.tar.gz
+
+  3. Compile the source code using:
+
+     $ make
+
+	 Optionally, you can compile it in debug mode in order to add debug
+	 information to the resulting binary. You'll need that only if you
+	 like to debug using gdb. To create a debug binary invoke:
+
+     $ make DEBUG=1
+
+The resulting binary is now ready to use.
+
+As for now, I've tested the binary on the following platforms and it
+just runs fine:
+
++ Arch Linux
++ Debian 6 Squeeze
++ Cygwin 
+
+
+----[ 2.5 - License ]---------------------------------------------------
+
+Copyright 2012 André Gasser
+
+CHATSRV is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+CHATSRV is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with CHATSRV.  If not, see <http://www.gnu.org/licenses/>.
+
+
+----[ 2.6 - Source Code Repository ]------------------------------------
+
+The latest version of the tool is always available here:
+
++ https://github.com/shoka/chatsrv
+
+
+----[ 2.7 - Reporting Bugs and Features ]-------------------------------
+
+This software is probably far away from a bug-free state. Because of
+this, I am very glad to receive feedback from you regarding CHATSRV.
+You can either contact me by mail or, even better, open a new issue on
+github.com.
+
+
+----[ 3 - Bibliography ]------------------------------------------------
+
+[1] Beginning Linux Programming, 4th Edition
+    N. Matthew, R. Stones, Wrox Press, 2008
+    ISBN: 978-0-470-14762-7
+
+[2] The C Programming Language, 2nd Edition
+    B. Kerniham, D. M. Ritchie, Prentice Hall, 1988
+    ISBN: 0-13-110362-8
+
+[3] Pthreads Programming
+    B. Nichols, D. Buttlar, J. Proulx Farrell, O'Reilly, 1996
+    ISBN: 1-56592-115-1
+
+----[ 4 - Contact ]-----------------------------------------------------
+
+Mail:      andre.gasser@gmx.ch
+Jabber:    sh0ka@jabber.ccc.de
+Blog:      http://blog.andregasser.net
+
+
