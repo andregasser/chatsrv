@@ -361,11 +361,12 @@ void process_msg(char *message, int self_sockfd)
 	int idx = get_client_info_idx_by_sockfd(self_sockfd);
 	llist_find_data(idx, (void *)&ci, &ll_clients);
 	
+	/* Remove \r\n from message */
 	chomp(message);
 	
 	/* Compile regex patterns */
 	regcomp(&regex_quit, "^/quit$", REG_EXTENDED);
-	regcomp(&regex_nick, "^/nick [a-z]{1,5}$", REG_EXTENDED);
+	regcomp(&regex_nick, "^/nick ([a-z]{1,5})$", REG_EXTENDED);
 	
 	/* Check if user wants to quit */
 	ret = regexec(&regex_quit, message, 0, NULL, 0);
@@ -386,17 +387,14 @@ void process_msg(char *message, int self_sockfd)
 	}
 
 	/* Check if user wants to change nick */		
-	size_t nmatch = 2;
-	regmatch_t pmatch[2];
-	ret = regexec(&regex_nick, message, nmatch, pmatch, 0);
+	size_t ngroups = 2;
+	regmatch_t groups[2];
+	ret = regexec(&regex_nick, message, ngroups, groups, 0);
 	if (ret == 0)
 	{
-		/* TODO: FIX THIS CODE HERE */
-		/* TODO: NICKNAME WIRD NICHT SAUBER ERKANNT /NICK commnd */
-		
-		/* Extract new nickname */
-		strcpy(newnick, &message[pmatch[1].rm_so]);
-		
+		size_t len = groups[1].rm_eo - groups[1].rm_so;
+		memcpy(newnick, message + groups[1].rm_so, len);
+						
 		/* Change nickname */
 		change_nickname(ci->nickname, newnick);
 		
@@ -407,8 +405,12 @@ void process_msg(char *message, int self_sockfd)
 		return;
 	}
 	
-	/* TODO: Log chat messages on the server console too */
-	send_broadcast_msg(message, self_sockfd);
+	/* Broadcast message to all clients */
+	sprintf(buffer, "%s\r\n", message);
+	send_broadcast_msg(buffer, self_sockfd);
+	
+	/* Log message on server console */
+	logline(LOG_INFO, "%s: %s", ci->nickname, message);
 }
 
 
@@ -424,6 +426,7 @@ void send_broadcast_msg(char *message, int self_sockfd)
 	for (i = 0; i < llist_get_count(&ll_clients); i++)
 	{
 		llist_find_data(i, (void *)&ci, &ll_clients);
+		/* TODO: ci points to 0x00 --> SEGFAULT! */
 		if (ci->client_sockfd != self_sockfd)
 		{
 			socklen = sizeof(ci->client_address);
