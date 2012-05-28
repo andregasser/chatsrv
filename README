@@ -1,6 +1,6 @@
                                ==CHATSRV==
 
-                        Version 0.1 / 20.05.2012
+                        Version 0.2 / 27.05.2012
 
 --=[ Disclaimer ]=-----------------------------------------------------//
 
@@ -30,11 +30,13 @@ details.
 	2.2.3 - Connecting to the Chat Server
 	2.2.4 - Disconnecting from the Chat Server
     2.2.5 - Shutting Down the Chat Server
+    2.2.6 - Redirecting the Server Console Output to a File
   2.3 - Supported Chat Commands
   2.4 - Building from Source
   2.5 - License
   2.6 - Source Code Repository
-  2.7 - Reporting Bugs and Features
+  2.7 - Known Issues
+  2.8 - Reporting Bugs and Features
 
 3 - Bibliography
 
@@ -43,9 +45,11 @@ details.
 
 --[ 1 - Introduction ]--------------------------------------------------
 
-CHATSRV serves as an example on how to implement a chat server in C. 
-Special features include:
+CHATSRV serves as an example of a chat server implemented in C. In order
+to use the chat server, clients connect to it by using a simple telnet
+client, such as linux telnet or putty.
 
+This tool was built as part of a seminar paper worked on at school.
 
 --[ 2 - The Tool ]------------------------------------------------------
 
@@ -57,6 +61,11 @@ The current version of CHATSRV offers the following features:
     CHATSRV is implemented as a multi-threaded chat server. For each 
     incoming client connection, a new thread will be created, which
     handles incoming messages from clients. 
+  
+  + Command-Line Parameters
+    Pass command-line parameters to the server to configure its 
+    behaviour in more detail. Parsing of command-line parameters is done
+    by using the GNU getopt library.
   
   + Advanced Logging
     CHATSRV uses a special logging mechanism, which allows to print log
@@ -86,6 +95,10 @@ The current version of CHATSRV offers the following features:
   + Support for Nickname Change
     Users can change their nicknames during a chat session. All other
     users will be notified about this change.
+    
+  + Private Messages
+    Users can send private messages to each others. Private messages
+    are only visible to the sender and the receiver.
   
 
 ----[ 2.2 - Usage ]-----------------------------------------------------
@@ -135,9 +148,9 @@ $ ./chatsrv
 This starts CHATSRV using its default configuration. Use the following
 command, if you would like to specify ip address and port:
 
-$ ./chatsrv --ip=127.0.0.1 --port=8888
+$ ./chatsrv --ip=192.168.1.1 --port=8888
 
-This starts CHATSRV on ip address 127.0.0.1, listening on port 8888.
+This starts CHATSRV on ip address 192.168.1.1, listening on port 8888.
 
 
 ----[ 2.2.3 - Connecting to the Chat Server ]---------------------------
@@ -145,20 +158,17 @@ This starts CHATSRV on ip address 127.0.0.1, listening on port 8888.
 In order to be able to chat with others, you must connect to CHATSRV
 first. to do this, you'll only need a simple telnet client:
 
-$ telnet 127.0.0.1 5555
+$ telnet 192.168.1.1 5555
 
-This connects you to the chat server running on 127.0.0.1, port 5555.
+This connects you to the chat server running on 192.168.1.1, port 5555.
 You can now start entering your messages. Your messages will be
 broadcasted to all other logged in users on this chat server.
 
 
 ----[ 2.2.4 - Disconnecting from the Chat Server ]----------------------
 
-To disconnect from the chat server, issue the following command
-In order to be able to chat with others, you must connect to CHATSRV
-first. to do this, you'll only need a simple telnet client:
-
-$ telnet 127.0.0.1 5555
+To disconnect from the chat server, use the /quit command. See 2.3 for
+a detailed list of supported chat commands.
 
 
 ----[ 2.2.5 - Shutting Down the Chat Server ]---------------------------
@@ -173,6 +183,14 @@ $ ./kill -s SIGTERM 4344
 This sends the SIGTERM to the process running using a PID of 4344. 
 
 
+----[ 2.2.6 - Redirecting the Server Console Output to a File ]---------
+
+If you like to keep your chat logs, just redirect the server console
+output to a text file by starting CHATSRV using the following commands:
+
+$ ./chatsrv -l 3 | tee chatsrv.log
+
+
 ----[ 2.3 - Supported Chat Commands ]-----------------------------------
 
 The chat server recognizes the following commands from clients:
@@ -180,6 +198,15 @@ The chat server recognizes the following commands from clients:
 /nick <nickname>
 
     Allows the user to change his nickname to <nickname>.
+
+/msg <nickname> <message>
+
+    Sends a private message <message> to user <nickname>.
+
+/me <message>
+
+    Use this to say something about yourself. /me will be replated
+    with your own nickname.
     
 /quit
 
@@ -188,7 +215,7 @@ The chat server recognizes the following commands from clients:
 
 ----[ 2.4 - Building from Source ]--------------------------------------
 
-Befor you can build the tool from source, your system must meet some
+Before you can build the tool from source, your system must meet some
 preconditions. Currently they are:
 
   + gcc must be installed.
@@ -217,12 +244,12 @@ following steps on your box:
 
 The resulting binary is now ready to use.
 
-As for now, I've tested the binary on the following platforms and it
-just runs fine:
+As for now, I've tested the CHATSRV binary on the following platforms 
+and it seems to just runs fine:
 
-+ Arch Linux
-+ Debian 6 Squeeze
-+ Cygwin 
+  + Arch Linux
+  + Debian 6 Squeeze
+  + Cygwin 
 
 
 ----[ 2.5 - License ]---------------------------------------------------
@@ -250,12 +277,25 @@ The latest version of the tool is always available here:
 + https://github.com/shoka/chatsrv
 
 
+----[ 2.7 - Known Issues ]----------------------------------------------
+
+At the time of writing this README, the following issues are known:
+
++ The Microsoft Windows telnet client does not work well in conjunction
+  with CHATSRV. The problem has not been analyzed in detail yet. As an
+  alternativ, PuTTY can be used.
+
+
 ----[ 2.7 - Reporting Bugs and Features ]-------------------------------
 
 This software is probably far away from a bug-free state. Because of
 this, I am very glad to receive feedback from you regarding CHATSRV.
 You can either contact me by mail or, even better, open a new issue on
 github.com.
+
+Although, I am not going to heavily enhance and improve this tool, I am
+really glad to get feedback from you. If I find time, I'll fix the code.
+Even better, if you could submit a patch. :)
 
 
 ----[ 3 - Bibliography ]------------------------------------------------
@@ -271,6 +311,7 @@ github.com.
 [3] Pthreads Programming
     B. Nichols, D. Buttlar, J. Proulx Farrell, O'Reilly, 1996
     ISBN: 1-56592-115-1
+
 
 ----[ 4 - Contact ]-----------------------------------------------------
 

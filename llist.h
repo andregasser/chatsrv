@@ -34,3 +34,4 @@ int llist_find_data(int index, void **datapp, llist_t *llistp);
 int llist_change_data(int index, void *datap, llist_t *llistp);
 int llist_show(llist_t *llistp);
 int llist_get_count(llist_t *llistp);
+int llist_get_next(int index, llist_t *llistp);

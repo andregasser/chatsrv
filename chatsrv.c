@@ -18,29 +18,23 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <errno.h>
 #include <signal.h>
 #include <regex.h>
 #include <getopt.h>
 #include <limits.h>
 #include "log.h"
-#include "llist.h"
+#include "llist2.h"
 
 
 /* Define some constants */
 #define APP_NAME        "CHATSRV" /* Name of applicaton */
-#define APP_VERSION     "0.1"     /* Version of application */
-#define MAX_THREADS     10
+#define APP_VERSION     "0.2"     /* Version of application */
+#define MAX_THREADS     1000      /* Max. number of concurrent chat sessions */
 
 
 /* Typedefs */
-typedef struct 
-{
-	int client_sockfd;
-	char nickname[20];
-	struct sockaddr_in client_address;
-} client_info;
-
 typedef struct 
 {
 	char *ip;
@@ -55,15 +49,20 @@ typedef struct
 struct sockaddr_in server_address;
 int server_sockfd;
 int server_len, client_len;
-llist_t ll_clients;
 cmd_params *params;
+client_info *list_client_info;
+
+/* TODO: Use mutex to access this variable */
+int curr_thread_count = 0;
 
 
 /* Function prototypes */
+int startup_server(void);
 int parse_cmd_args(int *argc, char *argv[]);
-void proc_client(client_info *arg);
+void proc_client(int *arg);
 void process_msg(char *message, int self_sockfd);
-void send_broadcast_msg(char *message, int self_sockfd);
+void send_broadcast_msg(char* format, ...);
+void send_private_msg(char* nickname, char* format, ...);
 void chomp(char *s);
 void change_nickname(char *oldnickname, char *newnickname);
 void shutdown_server(int sig);
@@ -81,10 +80,8 @@ int main(int argc, char *argv[])
 {
 	int i = 0;
 	int ret = 0;
-	int optval;
-	int curr_thread_count = 0;
 	struct sockaddr_in client_address;
-	int client_sockfd;
+	int client_sockfd = 0;
 	pthread_t threads[MAX_THREADS];
 			
 	/* Parse commandline args */
@@ -93,12 +90,12 @@ int main(int argc, char *argv[])
 	if (params->help)
 	{
 		display_help_page();
-		return 0;
+		exit(0);
 	}
 	if (params->version)
 	{
 		display_version_info();
-		return 0;
+		exit(0);
 	}
 	if (ret < 0)
 	{
@@ -107,10 +104,9 @@ int main(int argc, char *argv[])
 		if (ret == -6)
 			logline(LOG_ERROR, "Error: Invalid log level option specified (-l).");
 		logline(LOG_ERROR, "Use the -h option if you need help.");
-		return ret;
+		exit(ret);
 	}
 	
-
 	/* Set log level */
 	switch (params->loglevel)
 	{
@@ -120,51 +116,34 @@ int main(int argc, char *argv[])
 		default: set_loglevel(LOG_ERROR);
 	}
 
-	show_gnu_banner();
-			
 	/* Setup signal handler */
 	signal(SIGINT, shutdown_server);
 	signal(SIGTERM, shutdown_server);
 	
-	/* Setup linked list */
-	llist_init(&ll_clients);
-	
-	/* Setup logging */
-	set_loglevel(LOG_DEBUG);
-
+	/* Show banner and stuff */
+	show_gnu_banner();	
 	logline(LOG_INFO, "-----------");
 	logline(LOG_INFO, "Chat Server");
 	logline(LOG_INFO, "-----------");
 
-	/* Create socket */
-	server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	optval = 1;
-	if (setsockopt(server_sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval) != 0)
+	/* Startup the server listener */
+	if (startup_server() < 0)
 	{
-		perror(strerror(errno));
-		exit(-4);
-	}
-
-	/* Name the socket */
-	server_address.sin_family = AF_INET;
-	server_address.sin_addr.s_addr = inet_addr(params->ip);
-	server_address.sin_port = htons(params->port);
-	server_len = sizeof(server_address);
-	if (bind(server_sockfd, (struct sockaddr *)&server_address, server_len) != 0)
-	{
-		perror(strerror(errno));
+		logline(LOG_ERROR, "Error during server startup. Please consult debug log for details.");
 		exit(-1);
 	}
-
-	/* Create a connection queue and wait for incoming connections */
-	if (listen(server_sockfd, 5) != 0)
+	
+	/* Post ready message */
+	logline(LOG_INFO, "Server listening on %s, port %d", params->ip, params->port);
+	switch (params->loglevel)
 	{
-		perror(strerror(errno));
-		exit(-2);
+		case LOG_ERROR: logline(LOG_INFO, "Log level set to ERROR"); break;
+		case LOG_INFO: logline(LOG_INFO, "Log level set to INFO"); break;
+		case LOG_DEBUG: logline(LOG_INFO, "Log level set to DEBUG"); break;
+		default: logline(LOG_INFO, "Unknown log level specified"); break;
 	}
 	
-	logline(LOG_INFO, "Server listening on %s, port %d", params->ip, params->port);
-	
+	/* Handle connections */
 	while (1)
 	{
 		logline(LOG_INFO, "Waiting for incoming connection...");
@@ -180,31 +159,33 @@ int main(int argc, char *argv[])
 			/* A connection between a client and the server has been established.
 			 * Now create a new thread and handover the client_sockfd
 			 */
-			if (curr_thread_count < 10)
+			if (curr_thread_count < MAX_THREADS)
 			{
 				/* Prepare client infos in handy structure */
 				client_info *ci = (client_info *)malloc(sizeof(client_info));
-				ci->client_sockfd = client_sockfd;
-				ci->client_address = client_address;
-				
+				ci->sockfd = client_sockfd;
+				ci->address = client_address;
 				sprintf(ci->nickname, "anonymous_%d", client_sockfd);
+				
+				/* Add client info to linked list */
+				llist_insert(&list_client_info, ci);
+				llist_show(list_client_info);
 				
 				/* Pass client info and invoke new thread */	
 				ret = pthread_create(&threads[curr_thread_count],
 					NULL,
 					(void *)&proc_client, 
-					(void *)ci);
+					(void *)&client_sockfd); /* only pass socket id ? */
 			
 				if (ret == 0)
 				{
 					pthread_detach(threads[curr_thread_count]);
-					
-					//send_broadcast_msg("New user joined\n", 0);
-					
 					curr_thread_count++;
-					
-					/* Add client info to linked list */
-					llist_insert_data(llist_get_count(&ll_clients), ci, &ll_clients);
+										
+					/* Notify server and clients */
+					logline(LOG_INFO, "User %s joined the chat.", ci->nickname);	
+					logline(LOG_DEBUG, "main(): Connections used: %d of %d", curr_thread_count, MAX_THREADS);
+					send_broadcast_msg("User %s joined the chat.\r\n", ci->nickname);
 				}
 				else
 				{
@@ -214,7 +195,7 @@ int main(int argc, char *argv[])
 			}
 			else
 			{
-				logline(LOG_INFO, "Max. connections reached. Connection dropped.");
+				logline(LOG_ERROR, "Max. connections reached. Connection limit is %d. Connection dropped.", MAX_THREADS);
 				close(client_sockfd);
 			}
 		}
@@ -226,12 +207,44 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	//for (i = 0; i < curr_thread_count; i++)
-	//{
-	//	pthread_join(threads[i], NULL);
-	//}
-
 	free(params);
+
+	return 0;
+}
+
+
+/* 
+ * Startup the server listener.
+ */
+int startup_server(void)
+{
+	int optval = 1;
+	
+	/* Create socket */
+	server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (setsockopt(server_sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval) != 0)
+	{
+		logline(LOG_DEBUG, "Error calling setsockopt(): %s", strerror(errno));
+		return -1;
+	}
+
+	/* Name the socket */
+	server_address.sin_family = AF_INET;
+	server_address.sin_addr.s_addr = inet_addr(params->ip);
+	server_address.sin_port = htons(params->port);
+	server_len = sizeof(server_address);
+	if (bind(server_sockfd, (struct sockaddr *)&server_address, server_len) != 0)
+	{
+		logline(LOG_DEBUG, "Error calling bind(): %s", strerror(errno));
+		return -2;
+	}
+
+	/* Create a connection queue and wait for incoming connections */
+	if (listen(server_sockfd, 5) != 0)
+	{
+		logline(LOG_DEBUG, "Error calling listen(): %s", strerror(errno));
+		return -3;
+	}
 
 	return 0;
 }
@@ -272,20 +285,14 @@ int parse_cmd_args(int *argc, char *argv[])
 
 		switch (c)
 		{
-			case 'i':
-				params->ip = optarg;
-				break;
+			case 'i': params->ip = optarg; break;
 			case 'p':
 				params->port = atoi(optarg);
 				if ((params->port < 1) || (params->port > 65535))
 					return -2;
 				break;
-			case 'h':
-				params->help = 1;
-				break;
-			case 'v':
-				params->version = 1;
-				break;
+			case 'h': params->help = 1; break;
+			case 'v': params->version = 1; break;
 			case 'l':
 				params->loglevel = atoi(optarg);
 	            if ((params->loglevel < 1) || (params->loglevel > 3))
@@ -301,23 +308,22 @@ int parse_cmd_args(int *argc, char *argv[])
 /*
  * This method is run on a per-connection basis in a separate thred.
  */
-void proc_client(client_info *arg)
+void proc_client(int *arg)
 {
-	int i;
 	char buffer[1024];
-	int ret;
-	int len;
-	int socklen;
-	client_info *ci_self;
+	int ret = 0;
+	int len = 0;
+	int socklen = 0;
 	client_info *ci;
-	int client_sockfd;
-	
 	fd_set readfds;
+	int sockfd = 0;
 	
-	ci_self = (client_info *)arg;
+	/* Load associated client info */
+	sockfd = *arg;
+	ci = llist_find_by_sockfd(list_client_info, sockfd);
 	
 	FD_ZERO(&readfds);
-	FD_SET(ci_self->client_sockfd, &readfds);
+	FD_SET(sockfd, &readfds);
 
 	while (1)
 	{
@@ -325,20 +331,24 @@ void proc_client(client_info *arg)
 			(fd_set *)0, (struct timeval *) 0);
 		if (ret < 1)
 		{
+			logline(LOG_ERROR, "Error calling select() on thread.");
 			perror(strerror(errno));
 		}
 		else
 		{
-			ioctl(ci_self->client_sockfd, FIONREAD, &len);
+			logline(LOG_DEBUG, "proc_client: Calling ioctl() with socket id = %d", sockfd);
+			ioctl(sockfd, FIONREAD, &len);
+			logline(LOG_DEBUG, "proc_client: ioctl() has %d bytes ready to be read", len);
 			if (len > 0)
 			{
 				/* Read data from stream */
-				socklen = sizeof(ci_self->client_address);
-				len = recvfrom(ci_self->client_sockfd, buffer, sizeof(buffer), 0, 
-					(struct sockaddr *)&ci_self->client_address, (socklen_t *)&socklen);
+				socklen = sizeof(ci->address);
+				len = recvfrom(sockfd, buffer, sizeof(buffer), 0, 
+					(struct sockaddr *)&ci->address, (socklen_t *)&socklen);
 		  		buffer[len] = '\0';
 		  		
-		  		process_msg(buffer, ci_self->client_sockfd);	
+		  		/* Process message */
+		  		process_msg(buffer, sockfd);	
 			}
 		}
 	}
@@ -350,95 +360,192 @@ void process_msg(char *message, int self_sockfd)
 	char buffer[1024];
 	regex_t regex_quit;
 	regex_t regex_nick;
+	regex_t regex_msg;
+	regex_t regex_me;
 	int ret;
 	char newnick[20];
+	char oldnick[20];
 	client_info *ci;
+	int processed = FALSE;
+	size_t ngroups = 0;
+	size_t len = 0;
+	regmatch_t groups[3];
 	
 	memset(buffer, 0, 1024);
 	memset(newnick, 0, 20);
+	memset(oldnick, 0, 20);
 	
 	/* Load client info object */
-	int idx = get_client_info_idx_by_sockfd(self_sockfd);
-	llist_find_data(idx, (void *)&ci, &ll_clients);
+	ci = llist_find_by_sockfd(list_client_info, self_sockfd);
 	
 	/* Remove \r\n from message */
 	chomp(message);
 	
 	/* Compile regex patterns */
 	regcomp(&regex_quit, "^/quit$", REG_EXTENDED);
-	regcomp(&regex_nick, "^/nick ([a-z]{1,5})$", REG_EXTENDED);
+	regcomp(&regex_nick, "^/nick ([a-zA-Z0-9_]{1,19})$", REG_EXTENDED);
+	regcomp(&regex_msg, "^/msg ([a-zA-Z0-9_]{1,19}) (.*)$", REG_EXTENDED);
+	regcomp(&regex_me, "^/me (.*)$", REG_EXTENDED);
+
+	llist_show(list_client_info);
 	
 	/* Check if user wants to quit */
 	ret = regexec(&regex_quit, message, 0, NULL, 0);
 	if (ret == 0)
 	{
-		/* Broadcast message */
-		sprintf(buffer, "User %s has left the chat server.", ci->nickname);
-		send_broadcast_msg(buffer, self_sockfd);
-		logline(LOG_INFO, "%s", buffer);
+		/* Notify */
+		send_broadcast_msg("User %s has left the chat server.\r\n", ci->nickname);
+		logline(LOG_INFO, "User %s has left the chat server.", ci->nickname);
+		curr_thread_count--;
+		logline(LOG_DEBUG, "process_msg(): Connections used: %d of %d", curr_thread_count, MAX_THREADS);
 
 		/* Disconnect client from server */
 		close(self_sockfd);
 
 		/* Remove entry from linked list */
-		llist_remove_data(idx, (void *)&ci, &ll_clients);
+		llist_remove_by_sockfd(&list_client_info, self_sockfd);
+
+		/* Free memory */
+		regfree(&regex_quit);
+		regfree(&regex_nick);
 		
+		llist_show(list_client_info);
+
+		/* Terminate this thread */		
 		pthread_exit(0);
 	}
 
 	/* Check if user wants to change nick */		
-	size_t ngroups = 2;
-	regmatch_t groups[2];
+	ngroups = 2;
 	ret = regexec(&regex_nick, message, ngroups, groups, 0);
 	if (ret == 0)
 	{
-		size_t len = groups[1].rm_eo - groups[1].rm_so;
-		memcpy(newnick, message + groups[1].rm_so, len);
-						
+		processed = TRUE;
+		
+		/* Extract nickname */
+		len = groups[1].rm_eo - groups[1].rm_so;
+		strncpy(newnick, message + groups[1].rm_so, len);
+		strcpy(oldnick, ci->nickname);
+		
+		strcpy(buffer, "User ");
+		strcat(buffer, oldnick);
+		strcat(buffer, " is now known as ");
+		strcat(buffer, newnick);
+							
 		/* Change nickname */
-		change_nickname(ci->nickname, newnick);
+		change_nickname(oldnick, newnick);
 		
 		/* Broadcast message */
-		sprintf(buffer, "User %s is now known as %s.", ci->nickname, newnick);
-		send_broadcast_msg(buffer, self_sockfd);
-		logline(LOG_INFO, "%s", buffer);
-		return;
+		send_broadcast_msg("%s\r\n", buffer);
+		logline(LOG_INFO, buffer);
 	}
 	
-	/* Broadcast message to all clients */
-	sprintf(buffer, "%s\r\n", message);
-	send_broadcast_msg(buffer, self_sockfd);
+	/* Check if user wants to transmit a private message to another user */
+	ngroups = 3;
+	ret = regexec(&regex_msg, message, ngroups, groups, 0);
+	if (ret == 0)
+	{
+		processed = TRUE;
+		
+		/* Extract nickname and private message */
+		len = groups[1].rm_eo - groups[1].rm_so;
+		memcpy(newnick, message + groups[1].rm_so, len);
+		len = groups[2].rm_eo - groups[2].rm_so;
+		memcpy(buffer, message + groups[2].rm_so, len);
+		
+		/* Send private message */
+		send_private_msg(newnick, "%s: %s\r\n", ci->nickname, buffer);
+		logline(LOG_INFO, "Private message from %s to %s: %s", ci->nickname, newnick, buffer);
+	}
 	
-	/* Log message on server console */
-	logline(LOG_INFO, "%s: %s", ci->nickname, message);
+	/* Check if user wants to say something about himself */
+	ngroups = 2;
+	ret = regexec(&regex_me, message, ngroups, groups, 0);
+	if (ret == 0)
+	{
+		processed = TRUE;
+		
+		strcpy(buffer, ci->nickname);
+		
+		/* Prepare message */
+		len = groups[1].rm_eo - groups[1].rm_so;
+		strcat(buffer, " ");
+		strncat(buffer, message + groups[1].rm_so, len);
+			
+		/* Broadcast message */
+		send_broadcast_msg("%s\r\n", buffer);
+		logline(LOG_INFO, buffer);
+	}
+	
+	/* Broadcast message */
+	if (processed == FALSE)
+	{
+		send_broadcast_msg("%s: %s\r\n", ci->nickname, message);
+		logline(LOG_INFO, "%s: %s", ci->nickname, message);
+	}
+	
+	/* Free memory */
+	regfree(&regex_quit);
+	regfree(&regex_nick);
+	regfree(&regex_msg);
 }
 
 
 /* Send received message out to all available clients, but do
  * not send it to yourself.
  */
-void send_broadcast_msg(char *message, int self_sockfd)
+void send_broadcast_msg(char* format, ...)
 {
-	int i;
-	int socklen;
-	client_info *ci;
+	int socklen = 0;
+	client_info *cur = NULL;
+	va_list args;
+	char buffer[1024];
+		
+	memset(buffer, 0, 1024);
+
+	/* Prepare message */
+	va_start(args, format);
+	vsprintf(buffer, format, args);
+	va_end(args);
 	
-	for (i = 0; i < llist_get_count(&ll_clients); i++)
+	cur = list_client_info;
+	while (cur != NULL)
 	{
-		llist_find_data(i, (void *)&ci, &ll_clients);
-		/* TODO: ci points to 0x00 --> SEGFAULT! */
-		if (ci->client_sockfd != self_sockfd)
-		{
-			socklen = sizeof(ci->client_address);
-			sendto(ci->client_sockfd, message, strlen(message), 0,
-				(struct sockaddr *)&(ci->client_address), (socklen_t)socklen);
-		}
+		/* Send message to client */
+		socklen = sizeof(cur->address);
+		sendto(cur->sockfd, buffer, strlen(buffer), 0,
+			(struct sockaddr *)&(cur->address), (socklen_t)socklen);
+		
+		/* Load next index */
+		cur = cur->next;
 	}
 }
 
 
+/*
+ * Sends a private message to a user.
+ */
+void send_private_msg(char* nickname, char* format, ...)
+{
+	int socklen = 0;
+	client_info *cur = NULL;
+	va_list args;
+	char buffer[1024];
+		
+	memset(buffer, 0, 1024);
 
+	/* Prepare message */
+	va_start(args, format);
+	vsprintf(buffer, format, args);
+	va_end(args);
+	
+	cur = llist_find_by_nickname(list_client_info, nickname);
 
+	/* Send message to client */
+	socklen = sizeof(cur->address);
+	sendto(cur->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->address), (socklen_t)socklen);
+}
 
 /*
  * Removes newlines \n from the char array.
@@ -456,23 +563,25 @@ void chomp(char *s)
  */
 void change_nickname(char *oldnickname, char *newnickname)
 {
-	client_info *ci;
-	client_info *ci_new;
+	client_info *ci = NULL;
+	client_info *ci_new = NULL;
+	int idx = 0;
 	
-	/* Get index of linked list element to modify */
-	int idx = get_client_info_idx_by_nickname(oldnickname);
-
-	/* Load element based on index */
-	llist_find_data(idx, (void *)&ci, &ll_clients);
-
+	logline(LOG_DEBUG, "change_nickname(): oldnickname = %s, newnickname = %s", oldnickname, newnickname);
+	
+	/* Load client_info element */
+	ci = llist_find_by_nickname(list_client_info, oldnickname);
+	
+	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", ci->nickname);
+	
 	/* Prepare new list entry using new nickname */
 	ci_new = (client_info *)malloc(sizeof(client_info));
 	strcpy(ci_new->nickname, newnickname);
-	ci_new->client_sockfd = ci->client_sockfd;
-	ci_new->client_address = ci->client_address;
+	ci_new->sockfd = ci->sockfd;
+	ci_new->address = ci->address;
 	
 	/* Update nickname */
-	llist_change_data(idx, &ci_new, &ll_clients);	
+	llist_change_by_sockfd(&list_client_info, ci_new, ci->sockfd);
 }
 
 
@@ -481,8 +590,9 @@ void change_nickname(char *oldnickname, char *newnickname)
  */
 void shutdown_server(int sig)
 {
-	int i;
-	int *client_sockfd;
+	int i = 0;
+	int *client_sockfd = NULL;
+
 
 	if (sig == SIGINT)
 	{
@@ -490,11 +600,13 @@ void shutdown_server(int sig)
 		
 		/* Close all socket connections immediately */
 		logline(LOG_INFO, "Closing socket connections...");		
-		for (i = 0; i < llist_get_count(&ll_clients); i++)
-		{
-			llist_find_data(i, (void *)&client_sockfd, &ll_clients);
-			close(*client_sockfd);
-		}
+		
+		/* TODO: Code proper shutdown and list cleanup */
+		//for (i = 0; i < llist_get_count(list_client_info); i++)
+		//{
+		//	llist_find_data(i, (void *)&client_sockfd, &ll_clients);
+		//	close(*client_sockfd);
+		//}
 		
 		/* TODO: Cleanup linked list items (remove) */
 
@@ -506,50 +618,6 @@ void shutdown_server(int sig)
 		logline(LOG_INFO, "Exiting. Byebye.");
 		exit(0);
 	}
-}
-
-
-/*
- * Gets a client_info structure by passing a socket file descriptor
- * as a query filter.
- */
-int get_client_info_idx_by_sockfd(int sockfd)
-{
-	int i;
-	client_info *ci;
-	
-	for (i = 0; i < llist_get_count(&ll_clients); i++)
-	{
-		llist_find_data(i, (void *)&ci, &ll_clients);
-		if (ci->client_sockfd == sockfd)
-		{
-			return i;
-		}
-	}
-
-	return -1;
-}
-
-
-/*
- * Gets a client_info structure by passing a nickname
- * as query filter.
- */
-int get_client_info_idx_by_nickname(char *nickname)
-{
-	int i;
-	client_info *ci;
-	
-	for (i = 0; i < llist_get_count(&ll_clients); i++)
-	{
-		llist_find_data(i, (void *)&ci, &ll_clients);
-		if (strcmp(ci->nickname, nickname) == 0)
-		{
-			return i;
-		}
-	}
-
-	return -1;
 }
 
 

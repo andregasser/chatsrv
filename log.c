@@ -53,9 +53,10 @@ void logline(int loglevel, const char* format, ...)
 
 		printf("[%s %s] ", timestr, loginfo);
 		va_start(args, format);
-		vfprintf(stdout, format, args);
+		vprintf(format, args);
 		va_end(args);
-		printf("\n");
+		printf("\r\n");
+		fflush(stdout);
 	}
 }
 
