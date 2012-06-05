@@ -30,9 +30,10 @@
 
 /* Define some constants */
 #define APP_NAME        "CHATSRV" /* Name of applicaton */
-#define APP_VERSION     "0.2"     /* Version of application */
+#define APP_VERSION     "0.3"     /* Version of application */
 #define MAX_THREADS     1000      /* Max. number of concurrent chat sessions */
-
+#define TRUE            1
+#define FALSE           0
 
 /* Typedefs */
 typedef struct 
@@ -122,9 +123,6 @@ int main(int argc, char *argv[])
 	
 	/* Show banner and stuff */
 	show_gnu_banner();	
-	logline(LOG_INFO, "-----------");
-	logline(LOG_INFO, "Chat Server");
-	logline(LOG_INFO, "-----------");
 
 	/* Startup the server listener */
 	if (startup_server() < 0)
@@ -311,6 +309,7 @@ int parse_cmd_args(int *argc, char *argv[])
 void proc_client(int *arg)
 {
 	char buffer[1024];
+	char message[1024];
 	int ret = 0;
 	int len = 0;
 	int socklen = 0;
@@ -322,6 +321,7 @@ void proc_client(int *arg)
 	sockfd = *arg;
 	ci = llist_find_by_sockfd(list_client_info, sockfd);
 	
+	memset(message, 0, 1024);
 	FD_ZERO(&readfds);
 	FD_SET(sockfd, &readfds);
 
@@ -329,26 +329,43 @@ void proc_client(int *arg)
 	{
 		ret = select(FD_SETSIZE, &readfds, (fd_set *)0, 
 			(fd_set *)0, (struct timeval *) 0);
-		if (ret < 1)
+		if (ret == -1)
 		{
 			logline(LOG_ERROR, "Error calling select() on thread.");
 			perror(strerror(errno));
 		}
 		else
 		{
-			logline(LOG_DEBUG, "proc_client: Calling ioctl() with socket id = %d", sockfd);
-			ioctl(sockfd, FIONREAD, &len);
-			logline(LOG_DEBUG, "proc_client: ioctl() has %d bytes ready to be read", len);
-			if (len > 0)
-			{
-				/* Read data from stream */
-				socklen = sizeof(ci->address);
-				len = recvfrom(sockfd, buffer, sizeof(buffer), 0, 
-					(struct sockaddr *)&ci->address, (socklen_t *)&socklen);
-		  		buffer[len] = '\0';
-		  		
+			/* Read data from stream */
+			memset(buffer, 0, 1024);
+			socklen = sizeof(ci->address);
+			len = recvfrom(sockfd, buffer, sizeof(buffer), 0, 
+				(struct sockaddr *)&ci->address, (socklen_t *)&socklen);
+
+			logline(LOG_DEBUG, "proc_client(): Receive buffer contents = %s", buffer);
+
+			/* Copy receive buffer to message buffer */
+			strcat(message, buffer);
+			
+			/* Check if message buffer contains a full message. A full message
+			 * is recognized by its terminating \n character. If a message
+			 * is found, process it and clear message buffer afterwards.
+			 */
+			char *pos = strstr(message, "\n");
+			if (pos != NULL)
+			{		  		
+				chomp(message);
+				logline(LOG_DEBUG, "proc_client(): Message buffer contents = %s", message);
+				logline(LOG_DEBUG, "proc_client(): Complete message received.");
+
 		  		/* Process message */
-		  		process_msg(buffer, sockfd);	
+		  		process_msg(message, sockfd);
+		  		memset(message, 0, 1024);	
+			}
+			else
+			{
+				logline(LOG_DEBUG, "proc_client(): Message buffer contents = %s", message);
+				logline(LOG_DEBUG, "proc_client(): Message still incomplete.");
 			}
 		}
 	}
@@ -365,7 +382,9 @@ void process_msg(char *message, int self_sockfd)
 	int ret;
 	char newnick[20];
 	char oldnick[20];
-	client_info *ci;
+	char priv_nick[20];
+	client_info *ci = NULL;
+	client_info *priv_ci = NULL;
 	int processed = FALSE;
 	size_t ngroups = 0;
 	size_t len = 0;
@@ -374,6 +393,7 @@ void process_msg(char *message, int self_sockfd)
 	memset(buffer, 0, 1024);
 	memset(newnick, 0, 20);
 	memset(oldnick, 0, 20);
+	memset(priv_nick, 0, 20);
 	
 	/* Load client info object */
 	ci = llist_find_by_sockfd(list_client_info, self_sockfd);
@@ -387,8 +407,6 @@ void process_msg(char *message, int self_sockfd)
 	regcomp(&regex_msg, "^/msg ([a-zA-Z0-9_]{1,19}) (.*)$", REG_EXTENDED);
 	regcomp(&regex_me, "^/me (.*)$", REG_EXTENDED);
 
-	llist_show(list_client_info);
-	
 	/* Check if user wants to quit */
 	ret = regexec(&regex_quit, message, 0, NULL, 0);
 	if (ret == 0)
@@ -408,8 +426,6 @@ void process_msg(char *message, int self_sockfd)
 		/* Free memory */
 		regfree(&regex_quit);
 		regfree(&regex_nick);
-		
-		llist_show(list_client_info);
 
 		/* Terminate this thread */		
 		pthread_exit(0);
@@ -449,13 +465,19 @@ void process_msg(char *message, int self_sockfd)
 		
 		/* Extract nickname and private message */
 		len = groups[1].rm_eo - groups[1].rm_so;
-		memcpy(newnick, message + groups[1].rm_so, len);
+		memcpy(priv_nick, message + groups[1].rm_so, len);
 		len = groups[2].rm_eo - groups[2].rm_so;
 		memcpy(buffer, message + groups[2].rm_so, len);
 		
-		/* Send private message */
-		send_private_msg(newnick, "%s: %s\r\n", ci->nickname, buffer);
-		logline(LOG_INFO, "Private message from %s to %s: %s", ci->nickname, newnick, buffer);
+		/* Check if nickname exists. If yes, send private message to user. 
+		 * If not, ignore message.
+		 */
+		priv_ci = llist_find_by_nickname(list_client_info, priv_nick);
+		if (priv_ci != NULL)
+		{
+			send_private_msg(priv_nick, "%s: %s\r\n", ci->nickname, buffer);
+			logline(LOG_INFO, "Private message from %s to %s: %s", ci->nickname, priv_nick, buffer);
+		}
 	}
 	
 	/* Check if user wants to say something about himself */
@@ -483,6 +505,9 @@ void process_msg(char *message, int self_sockfd)
 		send_broadcast_msg("%s: %s\r\n", ci->nickname, message);
 		logline(LOG_INFO, "%s: %s", ci->nickname, message);
 	}
+
+	/* Dump current user list */
+	llist_show(list_client_info);
 	
 	/* Free memory */
 	regfree(&regex_quit);

@@ -1,6 +1,6 @@
                                ==CHATSRV==
 
-                        Version 0.2 / 27.05.2012
+                        Version 0.3 / 05.06.2012
 
 --=[ Disclaimer ]=-----------------------------------------------------//
 
@@ -279,11 +279,7 @@ The latest version of the tool is always available here:
 
 ----[ 2.7 - Known Issues ]----------------------------------------------
 
-At the time of writing this README, the following issues are known:
-
-+ The Microsoft Windows telnet client does not work well in conjunction
-  with CHATSRV. The problem has not been analyzed in detail yet. As an
-  alternativ, PuTTY can be used.
+At the time of this writing, no problems related to this tool are known.
 
 
 ----[ 2.7 - Reporting Bugs and Features ]-------------------------------
