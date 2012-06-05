@@ -53,6 +53,7 @@ int llist_insert(client_info **list_start, client_info *element)
 int llist_remove_by_sockfd(client_info **list_start, int sockfd)
 {
 	client_info *cur, *prev;
+	pthread_mutex_t mutex_ptr;
 
 	cur = prev = *list_start;
 	while (cur != NULL)
@@ -62,20 +63,30 @@ int llist_remove_by_sockfd(client_info **list_start, int sockfd)
 			/* Special treatment for first element in list */
 			if (cur == *list_start)
 			{
+				logline(LOG_DEBUG, "llist_remove_by_sockfd(): Remove first element");
+				
 				/* Lock */
 				pthread_mutex_lock(&((*list_start)->mutex));
+				
+				/* Since we're deleting the only element in the list and a lock
+				 * is required to delete it, we must save the mutex location first
+				 * in order to be able to unlock it after the removal operation.
+				 */
+				mutex_ptr =(*list_start)->mutex;
 				
 				/* Modify */
 				*list_start = cur->next;
 				
 				/* Unlock */
-				pthread_mutex_unlock(&((*list_start)->mutex));
-				
+				pthread_mutex_unlock(&mutex_ptr);
+								
 				free(cur);
 				break;			
 			}
 			else
 			{
+				logline(LOG_DEBUG, "llist_remove_by_sockfd(): Remove 2..nth element");
+				
 				/* Lock */
 				pthread_mutex_lock(&(cur->mutex));
 				pthread_mutex_lock(&(prev->mutex));
