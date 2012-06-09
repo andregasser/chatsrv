@@ -1,0 +1,23 @@
+                               ==CHATSRV==
+
+                        Version 0.5 / 09.06.2012
+
+--=[ Introduction ]=---------------------------------------------------//
+
+This is the list of open issues, ideas and so forth which I have 
+collected over time. If you like to support my project, please get
+in touch with me.
+
+
+--[ To Do's ]------------------------------------------------------------
+
++ Add /help command
+
+  Lists all the available chat commands.
+
+
++ Add /who command
+
+  Lists all the currently logged in users. 
+
+
