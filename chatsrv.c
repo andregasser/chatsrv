@@ -35,6 +35,7 @@
 #include "log.h"
 #include "llist2.h"
 #include "bool.h"
+#include "colors.h"
 
 
 /* Define some constants */
@@ -341,7 +342,7 @@ void proc_client(int *arg)
 	send_welcome_msg(sockfd);
 
 	/* Announce to others using broadcast */
-	send_broadcast_msg("User %s joined the chat.\r\n", list_entry->client_info->nickname);
+	send_broadcast_msg("%sUser %s joined the chat.%s\r\n", color_magenta, list_entry->client_info->nickname, color_normal);
 
 	/* Process requests */
 	while (1)
@@ -364,7 +365,6 @@ void proc_client(int *arg)
 			logline(LOG_DEBUG, "proc_client(): Receive buffer contents = %s", buffer);
 
 			/* Copy receive buffer to message buffer */
-			/* TODO: Only copy buffer if enough space in message left */
 			if (sizeof(message) - strlen(message) > strlen(buffer))
 			{
 				strcat(message, buffer);
@@ -439,7 +439,7 @@ void process_msg(char *message, int self_sockfd)
 	if (ret == 0)
 	{
 		/* Notify */
-		send_broadcast_msg("User %s has left the chat server.\r\n", list_entry->client_info->nickname);
+		send_broadcast_msg("%sUser %s has left the chat server.%s\r\n", color_magenta, list_entry->client_info->nickname, color_normal);
 		logline(LOG_INFO, "User %s has left the chat server.", list_entry->client_info->nickname);
 		pthread_mutex_lock(&curr_thread_count_mutex);
 		curr_thread_count--;
@@ -485,12 +485,12 @@ void process_msg(char *message, int self_sockfd)
 		if (nick_list_entry == NULL)
 		{
 			change_nickname(oldnick, newnick);
-			send_broadcast_msg("%s\r\n", buffer);
+			send_broadcast_msg("%s%s%s\r\n", color_yellow, buffer, color_normal);
 			logline(LOG_INFO, buffer);
 		}
 		else
 		{
-			send_private_msg(oldnick, "CHATSRV: Cannot change nickname. Nickname already in use.\r\n");
+			send_private_msg(oldnick, "%sCHATSRV: Cannot change nickname. Nickname already in use.%s\r\n", color_yellow, color_normal);
 			logline(LOG_INFO, "Private message from CHATSRV to %s: Cannot change nickname. Nickname already in use", oldnick);
 		}
 	}
@@ -514,7 +514,7 @@ void process_msg(char *message, int self_sockfd)
 		priv_list_entry = llist_find_by_nickname(&list_start, priv_nick);
 		if (priv_list_entry != NULL)
 		{
-			send_private_msg(priv_nick, "%s: %s\r\n", priv_list_entry->client_info->nickname, buffer);
+			send_private_msg(priv_nick, "%s%s:%s %s%s%s\r\n", color_green, priv_list_entry->client_info->nickname, color_normal, color_red, buffer, color_normal);
 			logline(LOG_INFO, "Private message from %s to %s: %s", list_entry->client_info->nickname, priv_nick, buffer);
 		}
 	}
@@ -534,14 +534,14 @@ void process_msg(char *message, int self_sockfd)
 		strncat(buffer, message + groups[1].rm_so, len);
 			
 		/* Broadcast message */
-		send_broadcast_msg("%s\r\n", buffer);
+		send_broadcast_msg("%s%s%s\r\n", color_cyan, buffer, color_normal);
 		logline(LOG_INFO, buffer);
 	}
 	
 	/* Broadcast message */
 	if (processed == FALSE)
 	{
-		send_broadcast_msg("%s: %s\r\n", list_entry->client_info->nickname, message);
+		send_broadcast_msg("%s%s:%s %s\r\n", color_green, list_entry->client_info->nickname, color_normal, message);
 		logline(LOG_INFO, "%s: %s", list_entry->client_info->nickname, message);
 	}
 
@@ -574,23 +574,23 @@ void send_welcome_msg(int sockfd)
 
 	/* Send welcome message to client */
 	memset(buffer, 0, 1024);
-	strcpy(buffer, "/---------------------------------------------\\\r\n");
+	sprintf(buffer, "%s/---------------------------------------------\\%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	strcpy(buffer, "|             W E L C O M E   T O             |\r\n");
+	sprintf(buffer, "%s|             W E L C O M E   T O             |%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	sprintf(buffer, "|                  %s %s                |\r\n", APP_NAME, APP_VERSION);
+	sprintf(buffer, "%s|                  %s %s                |%s\r\n", color_white, APP_NAME, APP_VERSION, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	strcpy(buffer, "|          Written by Andre Gasser 2012       |\r\n");
+	sprintf(buffer, "%s|          Written by Andre Gasser 2012       |%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	strcpy(buffer, "\\---------------------------------------------/\r\n");
+	sprintf(buffer, "%s\\---------------------------------------------/%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 		

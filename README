@@ -88,6 +88,10 @@ The current version of CHATSRV offers the following features:
     memory, closes socket connections and terminates running threats. 
     Then it terminates itself and returns to the shell.
 
+  + ANSI Color Support
+    To better distinguish between each others messages. Uses various of
+    colors to improve display of messages.
+
   + Joiner / Leaver Notification
     If a user joins or leaves the chat server, all other users will be
     notified.
