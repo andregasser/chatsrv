@@ -1,6 +1,6 @@
                                ==CHATSRV==
 
-                        Version 0.4 / 09.06.2012
+                        Version 0.5 / 09.06.2012
 
 --=[ Disclaimer ]=-----------------------------------------------------//
 
@@ -95,6 +95,10 @@ The current version of CHATSRV offers the following features:
   + Support for Nickname Change
     Users can change their nicknames during a chat session. All other
     users will be notified about this change.
+    
+  + Duplicate Nickname Detection
+    Recognizes if other chat buddies already use the desired nickname.
+    The user is notified about that and asked to choose another name.  
     
   + Private Messages
     Users can send private messages to each others. Private messages
@@ -197,7 +201,9 @@ The chat server recognizes the following commands from clients:
 
 /nick <nickname>
 
-    Allows the user to change his nickname to <nickname>.
+    Allows the user to change his nickname to <nickname>. Plese note,
+    that, for security reasons, only letters a-z, A-Z and numbers 0-9
+    are allowed to build a nickname.
 
 /msg <nickname> <message>
 

@@ -39,7 +39,7 @@
 
 /* Define some constants */
 #define APP_NAME        "CHATSRV" /* Name of applicaton */
-#define APP_VERSION     "0.4"     /* Version of application */
+#define APP_VERSION     "0.5"     /* Version of application */
 #define MAX_THREADS     1000      /* Max. number of concurrent chat sessions */
 
 
@@ -364,7 +364,11 @@ void proc_client(int *arg)
 			logline(LOG_DEBUG, "proc_client(): Receive buffer contents = %s", buffer);
 
 			/* Copy receive buffer to message buffer */
-			strcat(message, buffer);
+			/* TODO: Only copy buffer if enough space in message left */
+			if (sizeof(message) - strlen(message) > strlen(buffer))
+			{
+				strcat(message, buffer);
+			}
 			
 			/* Check if message buffer contains a full message. A full message
 			 * is recognized by its terminating \n character. If a message
@@ -406,6 +410,7 @@ void process_msg(char *message, int self_sockfd)
 	char oldnick[20];
 	char priv_nick[20];
 	struct list_entry *list_entry = NULL;
+	struct list_entry *nick_list_entry = NULL;
 	struct list_entry *priv_list_entry = NULL;
 	int processed = FALSE;
 	size_t ngroups = 0;
@@ -475,12 +480,19 @@ void process_msg(char *message, int self_sockfd)
 		strcat(buffer, " is now known as ");
 		strcat(buffer, newnick);
 							
-		/* Change nickname */
-		change_nickname(oldnick, newnick);
-		
-		/* Broadcast message */
-		send_broadcast_msg("%s\r\n", buffer);
-		logline(LOG_INFO, buffer);
+		/* Change nickname. Check if nickname already exists first. */
+		nick_list_entry = llist_find_by_nickname(&list_start, newnick);
+		if (nick_list_entry == NULL)
+		{
+			change_nickname(oldnick, newnick);
+			send_broadcast_msg("%s\r\n", buffer);
+			logline(LOG_INFO, buffer);
+		}
+		else
+		{
+			send_private_msg(oldnick, "CHATSRV: Cannot change nickname. Nickname already in use.\r\n");
+			logline(LOG_INFO, "Private message from CHATSRV to %s: Cannot change nickname. Nickname already in use", oldnick);
+		}
 	}
 	
 	/* Check if user wants to transmit a private message to another user */
@@ -634,7 +646,6 @@ void send_broadcast_msg(char* format, ...)
 void send_private_msg(char* nickname, char* format, ...)
 {
 	int socklen = 0;
-	//client_info *cur = NULL;
 	struct list_entry *cur = NULL;
 	va_list args;
 	char buffer[1024];
