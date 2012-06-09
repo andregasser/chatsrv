@@ -1,13 +1,21 @@
-/*
- * Chat Server
+/******************************************************************************
+ *    Copyright 2012 André Gasser
  *
- * Features
- * - Fast reuse of sockets in case of TIME_WAIT
- * - Graceful server shutdown using SIGINT
- * - Multi-Threading using reader/writer lock on linked list
- * - Uses logging code (data/time) and log levels
+ *    This file is part of CHATSRV.
  *
- */
+ *    CHATSRV is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ *
+ *    CHATSRV is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with CHATSRV. If not, see <http://www.gnu.org/licenses/>.
+ *****************************************************************************/
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -26,14 +34,14 @@
 #include <limits.h>
 #include "log.h"
 #include "llist2.h"
+#include "bool.h"
 
 
 /* Define some constants */
 #define APP_NAME        "CHATSRV" /* Name of applicaton */
-#define APP_VERSION     "0.3"     /* Version of application */
+#define APP_VERSION     "0.4"     /* Version of application */
 #define MAX_THREADS     1000      /* Max. number of concurrent chat sessions */
-#define TRUE            1
-#define FALSE           0
+
 
 /* Typedefs */
 typedef struct 
@@ -45,16 +53,15 @@ typedef struct
 	int version;
 } cmd_params;
 
-
 /* Global vars */
 struct sockaddr_in server_address;
 int server_sockfd;
 int server_len, client_len;
 cmd_params *params;
-client_info *list_client_info;
+struct list_entry list_start;
 
-/* TODO: Use mutex to access this variable */
 int curr_thread_count = 0;
+pthread_mutex_t curr_thread_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /* Function prototypes */
@@ -62,6 +69,7 @@ int startup_server(void);
 int parse_cmd_args(int *argc, char *argv[]);
 void proc_client(int *arg);
 void process_msg(char *message, int self_sockfd);
+void send_welcome_msg(int sockfd);
 void send_broadcast_msg(char* format, ...);
 void send_private_msg(char* nickname, char* format, ...);
 void chomp(char *s);
@@ -157,6 +165,7 @@ int main(int argc, char *argv[])
 			/* A connection between a client and the server has been established.
 			 * Now create a new thread and handover the client_sockfd
 			 */
+			pthread_mutex_lock(&curr_thread_count_mutex);
 			if (curr_thread_count < MAX_THREADS)
 			{
 				/* Prepare client infos in handy structure */
@@ -166,8 +175,8 @@ int main(int argc, char *argv[])
 				sprintf(ci->nickname, "anonymous_%d", client_sockfd);
 				
 				/* Add client info to linked list */
-				llist_insert(&list_client_info, ci);
-				llist_show(list_client_info);
+				llist_insert(&list_start, ci);
+				llist_show(&list_start);
 				
 				/* Pass client info and invoke new thread */	
 				ret = pthread_create(&threads[curr_thread_count],
@@ -183,7 +192,6 @@ int main(int argc, char *argv[])
 					/* Notify server and clients */
 					logline(LOG_INFO, "User %s joined the chat.", ci->nickname);	
 					logline(LOG_DEBUG, "main(): Connections used: %d of %d", curr_thread_count, MAX_THREADS);
-					send_broadcast_msg("User %s joined the chat.\r\n", ci->nickname);
 				}
 				else
 				{
@@ -196,6 +204,7 @@ int main(int argc, char *argv[])
 				logline(LOG_ERROR, "Max. connections reached. Connection limit is %d. Connection dropped.", MAX_THREADS);
 				close(client_sockfd);
 			}
+			pthread_mutex_unlock(&curr_thread_count_mutex);
 		}
 		else
 		{
@@ -217,6 +226,9 @@ int main(int argc, char *argv[])
 int startup_server(void)
 {
 	int optval = 1;
+	
+	/* Initialize client_info list */
+	llist_init(&list_start);
 	
 	/* Create socket */
 	server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -313,18 +325,25 @@ void proc_client(int *arg)
 	int ret = 0;
 	int len = 0;
 	int socklen = 0;
-	client_info *ci;
+	struct list_entry *list_entry;
 	fd_set readfds;
 	int sockfd = 0;
 	
 	/* Load associated client info */
 	sockfd = *arg;
-	ci = llist_find_by_sockfd(list_client_info, sockfd);
+	list_entry = llist_find_by_sockfd(&list_start, sockfd);
 	
 	memset(message, 0, 1024);
 	FD_ZERO(&readfds);
 	FD_SET(sockfd, &readfds);
 
+	/* Send welcome message */
+	send_welcome_msg(sockfd);
+
+	/* Announce to others using broadcast */
+	send_broadcast_msg("User %s joined the chat.\r\n", list_entry->client_info->nickname);
+
+	/* Process requests */
 	while (1)
 	{
 		ret = select(FD_SETSIZE, &readfds, (fd_set *)0, 
@@ -338,9 +357,9 @@ void proc_client(int *arg)
 		{
 			/* Read data from stream */
 			memset(buffer, 0, 1024);
-			socklen = sizeof(ci->address);
+			socklen = sizeof(list_entry->client_info->address);
 			len = recvfrom(sockfd, buffer, sizeof(buffer), 0, 
-				(struct sockaddr *)&ci->address, (socklen_t *)&socklen);
+				(struct sockaddr *)&list_entry->client_info->address, (socklen_t *)&socklen);
 
 			logline(LOG_DEBUG, "proc_client(): Receive buffer contents = %s", buffer);
 
@@ -383,8 +402,8 @@ void process_msg(char *message, int self_sockfd)
 	char newnick[20];
 	char oldnick[20];
 	char priv_nick[20];
-	client_info *ci = NULL;
-	client_info *priv_ci = NULL;
+	struct list_entry *list_entry = NULL;
+	struct list_entry *priv_list_entry = NULL;
 	int processed = FALSE;
 	size_t ngroups = 0;
 	size_t len = 0;
@@ -396,7 +415,7 @@ void process_msg(char *message, int self_sockfd)
 	memset(priv_nick, 0, 20);
 	
 	/* Load client info object */
-	ci = llist_find_by_sockfd(list_client_info, self_sockfd);
+	list_entry = llist_find_by_sockfd(&list_start, self_sockfd);
 	
 	/* Remove \r\n from message */
 	chomp(message);
@@ -412,20 +431,25 @@ void process_msg(char *message, int self_sockfd)
 	if (ret == 0)
 	{
 		/* Notify */
-		send_broadcast_msg("User %s has left the chat server.\r\n", ci->nickname);
-		logline(LOG_INFO, "User %s has left the chat server.", ci->nickname);
+		send_broadcast_msg("User %s has left the chat server.\r\n", list_entry->client_info->nickname);
+		logline(LOG_INFO, "User %s has left the chat server.", list_entry->client_info->nickname);
+		pthread_mutex_lock(&curr_thread_count_mutex);
 		curr_thread_count--;
 		logline(LOG_DEBUG, "process_msg(): Connections used: %d of %d", curr_thread_count, MAX_THREADS);
+		pthread_mutex_unlock(&curr_thread_count_mutex);
+
+		/* Remove entry from linked list */
+		logline(LOG_DEBUG, "process_msg(): Removing element with sockfd = %d", self_sockfd);
+		llist_remove_by_sockfd(&list_start, self_sockfd);
 
 		/* Disconnect client from server */
 		close(self_sockfd);
 
-		/* Remove entry from linked list */
-		llist_remove_by_sockfd(&list_client_info, self_sockfd);
-
 		/* Free memory */
 		regfree(&regex_quit);
 		regfree(&regex_nick);
+		regfree(&regex_msg);
+		regfree(&regex_me);
 
 		/* Terminate this thread */		
 		pthread_exit(0);
@@ -441,7 +465,7 @@ void process_msg(char *message, int self_sockfd)
 		/* Extract nickname */
 		len = groups[1].rm_eo - groups[1].rm_so;
 		strncpy(newnick, message + groups[1].rm_so, len);
-		strcpy(oldnick, ci->nickname);
+		strcpy(oldnick, list_entry->client_info->nickname);
 		
 		strcpy(buffer, "User ");
 		strcat(buffer, oldnick);
@@ -472,11 +496,11 @@ void process_msg(char *message, int self_sockfd)
 		/* Check if nickname exists. If yes, send private message to user. 
 		 * If not, ignore message.
 		 */
-		priv_ci = llist_find_by_nickname(list_client_info, priv_nick);
-		if (priv_ci != NULL)
+		priv_list_entry = llist_find_by_nickname(&list_start, priv_nick);
+		if (priv_list_entry != NULL)
 		{
-			send_private_msg(priv_nick, "%s: %s\r\n", ci->nickname, buffer);
-			logline(LOG_INFO, "Private message from %s to %s: %s", ci->nickname, priv_nick, buffer);
+			send_private_msg(priv_nick, "%s: %s\r\n", priv_list_entry->client_info->nickname, buffer);
+			logline(LOG_INFO, "Private message from %s to %s: %s", list_entry->client_info->nickname, priv_nick, buffer);
 		}
 	}
 	
@@ -487,7 +511,7 @@ void process_msg(char *message, int self_sockfd)
 	{
 		processed = TRUE;
 		
-		strcpy(buffer, ci->nickname);
+		strcpy(buffer, list_entry->client_info->nickname);
 		
 		/* Prepare message */
 		len = groups[1].rm_eo - groups[1].rm_so;
@@ -502,17 +526,58 @@ void process_msg(char *message, int self_sockfd)
 	/* Broadcast message */
 	if (processed == FALSE)
 	{
-		send_broadcast_msg("%s: %s\r\n", ci->nickname, message);
-		logline(LOG_INFO, "%s: %s", ci->nickname, message);
+		send_broadcast_msg("%s: %s\r\n", list_entry->client_info->nickname, message);
+		logline(LOG_INFO, "%s: %s", list_entry->client_info->nickname, message);
 	}
 
 	/* Dump current user list */
-	llist_show(list_client_info);
+	llist_show(&list_start);
 	
 	/* Free memory */
 	regfree(&regex_quit);
 	regfree(&regex_nick);
 	regfree(&regex_msg);
+	regfree(&regex_me);
+}
+
+
+void send_welcome_msg(int sockfd)
+{
+	int socklen = 0;
+	struct list_entry *cur = NULL;
+	va_list args;
+	char buffer[1024];
+		
+	cur = llist_find_by_sockfd(&list_start, sockfd);
+	socklen = sizeof(cur->client_info->address);
+
+	/* Lock entry */
+	pthread_mutex_lock(cur->mutex);
+
+	/* Send welcome message to client */
+	memset(buffer, 0, 1024);
+	strcpy(buffer, "/---------------------------------------------\\\r\n");
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+	memset(buffer, 0, 1024);
+	strcpy(buffer, "|             W E L C O M E   T O             |\r\n");
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+	memset(buffer, 0, 1024);
+	sprintf(buffer, "|                  %s %s                |\r\n", APP_NAME, APP_VERSION);
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+	memset(buffer, 0, 1024);
+	strcpy(buffer, "|          Written by Andre Gasser 2012       |\r\n");
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+	memset(buffer, 0, 1024);
+	strcpy(buffer, "\\---------------------------------------------/\r\n");
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+		
+	/* Unlock entry */
+	pthread_mutex_unlock(cur->mutex);
 }
 
 
@@ -522,7 +587,8 @@ void process_msg(char *message, int self_sockfd)
 void send_broadcast_msg(char* format, ...)
 {
 	int socklen = 0;
-	client_info *cur = NULL;
+	//client_info *cur = NULL;
+	struct list_entry *cur = NULL;
 	va_list args;
 	char buffer[1024];
 		
@@ -533,13 +599,22 @@ void send_broadcast_msg(char* format, ...)
 	vsprintf(buffer, format, args);
 	va_end(args);
 	
-	cur = list_client_info;
+	cur = &list_start;
 	while (cur != NULL)
 	{
+		/* Lock entry */
+		pthread_mutex_lock(cur->mutex);
+		
 		/* Send message to client */
-		socklen = sizeof(cur->address);
-		sendto(cur->sockfd, buffer, strlen(buffer), 0,
-			(struct sockaddr *)&(cur->address), (socklen_t)socklen);
+		if (cur->client_info != NULL)
+		{
+			socklen = sizeof(cur->client_info->address);
+			sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+				(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+		}
+		
+		/* Unlock entry */
+		pthread_mutex_unlock(cur->mutex);
 		
 		/* Load next index */
 		cur = cur->next;
@@ -553,7 +628,8 @@ void send_broadcast_msg(char* format, ...)
 void send_private_msg(char* nickname, char* format, ...)
 {
 	int socklen = 0;
-	client_info *cur = NULL;
+	//client_info *cur = NULL;
+	struct list_entry *cur = NULL;
 	va_list args;
 	char buffer[1024];
 		
@@ -564,12 +640,18 @@ void send_private_msg(char* nickname, char* format, ...)
 	vsprintf(buffer, format, args);
 	va_end(args);
 	
-	cur = llist_find_by_nickname(list_client_info, nickname);
+	cur = llist_find_by_nickname(&list_start, nickname);
+
+	/* Lock entry */
+	pthread_mutex_lock(cur->mutex);
 
 	/* Send message to client */
-	socklen = sizeof(cur->address);
-	sendto(cur->sockfd, buffer, strlen(buffer), 0,
-		(struct sockaddr *)&(cur->address), (socklen_t)socklen);
+	socklen = sizeof(cur->client_info->address);
+	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
+		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
+		
+	/* Unlock entry */
+	pthread_mutex_unlock(cur->mutex);
 }
 
 /*
@@ -588,25 +670,34 @@ void chomp(char *s)
  */
 void change_nickname(char *oldnickname, char *newnickname)
 {
-	client_info *ci = NULL;
+	struct list_entry *list_entry = NULL;
+	//client_info *ci = NULL;
 	client_info *ci_new = NULL;
 	int idx = 0;
 	
 	logline(LOG_DEBUG, "change_nickname(): oldnickname = %s, newnickname = %s", oldnickname, newnickname);
 	
 	/* Load client_info element */
-	ci = llist_find_by_nickname(list_client_info, oldnickname);
+	list_entry = llist_find_by_nickname(&list_start, oldnickname);
 	
-	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", ci->nickname);
+	/*Lock entry */
+	pthread_mutex_lock(list_entry->mutex);
+	
+	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", list_entry->client_info->nickname);
 	
 	/* Prepare new list entry using new nickname */
-	ci_new = (client_info *)malloc(sizeof(client_info));
-	strcpy(ci_new->nickname, newnickname);
-	ci_new->sockfd = ci->sockfd;
-	ci_new->address = ci->address;
+	//ci_new = (client_info *)malloc(sizeof(client_info));
+	//strcpy(ci_new->nickname, newnickname);
+	//ci_new->sockfd = ci->sockfd;
+	//ci_new->address = ci->address;
 	
 	/* Update nickname */
-	llist_change_by_sockfd(&list_client_info, ci_new, ci->sockfd);
+	//llist_change_by_sockfd(&list_client_info, ci_new, ci->sockfd);
+	strcpy(list_entry->client_info->nickname, newnickname);
+	
+	
+	/* Unlock entry */
+	pthread_mutex_unlock(list_entry->mutex);
 }
 
 
