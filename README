@@ -1,6 +1,6 @@
                                ==CHATSRV==
 
-                        Version 0.3 / 05.06.2012
+                        Version 0.4 / 09.06.2012
 
 --=[ Disclaimer ]=-----------------------------------------------------//
 
@@ -47,7 +47,7 @@ details.
 
 CHATSRV serves as an example of a chat server implemented in C. In order
 to use the chat server, clients connect to it by using a simple telnet
-client, such as linux telnet or putty.
+client, such as linux or windows telnet or putty.
 
 This tool was built as part of a seminar paper worked on at school.
 
@@ -248,8 +248,7 @@ As for now, I've tested the CHATSRV binary on the following platforms
 and it seems to just runs fine:
 
   + Arch Linux
-  + Debian 6 Squeeze
-  + Cygwin 
+  + Debian 6 Squeeze 
 
 
 ----[ 2.5 - License ]---------------------------------------------------
