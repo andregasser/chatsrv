@@ -53,13 +53,13 @@ typedef struct
 	int version;
 } cmd_params;
 
+
 /* Global vars */
 struct sockaddr_in server_address;
 int server_sockfd;
 int server_len, client_len;
 cmd_params *params;
 struct list_entry list_start;
-
 int curr_thread_count = 0;
 pthread_mutex_t curr_thread_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -391,6 +391,9 @@ void proc_client(int *arg)
 }
 
 
+/*
+ * Process a chat message coming from a chat client.
+ */
 void process_msg(char *message, int self_sockfd)
 {
 	char buffer[1024];
@@ -541,6 +544,9 @@ void process_msg(char *message, int self_sockfd)
 }
 
 
+/* 
+ * Send a welcome message to the chat client after he has connected.
+ */
 void send_welcome_msg(int sockfd)
 {
 	int socklen = 0;
@@ -654,6 +660,7 @@ void send_private_msg(char* nickname, char* format, ...)
 	pthread_mutex_unlock(cur->mutex);
 }
 
+
 /*
  * Removes newlines \n from the char array.
  */
@@ -671,7 +678,6 @@ void chomp(char *s)
 void change_nickname(char *oldnickname, char *newnickname)
 {
 	struct list_entry *list_entry = NULL;
-	//client_info *ci = NULL;
 	client_info *ci_new = NULL;
 	int idx = 0;
 	
@@ -685,16 +691,8 @@ void change_nickname(char *oldnickname, char *newnickname)
 	
 	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", list_entry->client_info->nickname);
 	
-	/* Prepare new list entry using new nickname */
-	//ci_new = (client_info *)malloc(sizeof(client_info));
-	//strcpy(ci_new->nickname, newnickname);
-	//ci_new->sockfd = ci->sockfd;
-	//ci_new->address = ci->address;
-	
 	/* Update nickname */
-	//llist_change_by_sockfd(&list_client_info, ci_new, ci->sockfd);
 	strcpy(list_entry->client_info->nickname, newnickname);
-	
 	
 	/* Unlock entry */
 	pthread_mutex_unlock(list_entry->mutex);
@@ -706,26 +704,38 @@ void change_nickname(char *oldnickname, char *newnickname)
  */
 void shutdown_server(int sig)
 {
-	int i = 0;
-	int *client_sockfd = NULL;
+	list_entry *cur = NULL;
 
-
-	if (sig == SIGINT)
+	if ((sig == SIGINT) || (sig == SIGTERM))
 	{
-		logline(LOG_INFO, "Server shutdown requested per SIGINT. Performing cleanup ops now.");
+		if (sig == SIGINT)
+			logline(LOG_INFO, "Server shutdown requested per SIGINT. Performing cleanup ops now.");
+		if (sig == SIGTERM)
+			logline(LOG_INFO, "Server shutdown requested per SIGTERM. Performing cleanup ops now.");
 		
 		/* Close all socket connections immediately */
 		logline(LOG_INFO, "Closing socket connections...");		
 		
-		/* TODO: Code proper shutdown and list cleanup */
-		//for (i = 0; i < llist_get_count(list_client_info); i++)
-		//{
-		//	llist_find_data(i, (void *)&client_sockfd, &ll_clients);
-		//	close(*client_sockfd);
-		//}
+		/* Iterate through client list and shutdown sockets */
+		cur = &list_start;
+		while (cur != NULL)
+		{
+			/* Lock entry */
+			pthread_mutex_lock(cur->mutex);
 		
-		/* TODO: Cleanup linked list items (remove) */
-
+			/* Send message to client */
+			if (cur->client_info != NULL)
+			{
+				close(cur->client_info->sockfd);
+			}
+		
+			/* Unlock entry */
+			pthread_mutex_unlock(cur->mutex);
+		
+			/* Load next index */
+			cur = cur->next;
+		}		
+		
 		/* Close listener connection */
 		logline(LOG_INFO, "Shutting down listener...");
 		close(server_sockfd);
