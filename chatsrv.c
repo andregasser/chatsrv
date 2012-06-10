@@ -439,7 +439,8 @@ void process_msg(char *message, int self_sockfd)
 	if (ret == 0)
 	{
 		/* Notify */
-		send_broadcast_msg("%sUser %s has left the chat server.%s\r\n", color_magenta, list_entry->client_info->nickname, color_normal);
+		send_broadcast_msg("%sUser %s has left the chat server.%s\r\n", 
+			color_magenta, list_entry->client_info->nickname, color_normal);
 		logline(LOG_INFO, "User %s has left the chat server.", list_entry->client_info->nickname);
 		pthread_mutex_lock(&curr_thread_count_mutex);
 		curr_thread_count--;
@@ -490,8 +491,10 @@ void process_msg(char *message, int self_sockfd)
 		}
 		else
 		{
-			send_private_msg(oldnick, "%sCHATSRV: Cannot change nickname. Nickname already in use.%s\r\n", color_yellow, color_normal);
-			logline(LOG_INFO, "Private message from CHATSRV to %s: Cannot change nickname. Nickname already in use", oldnick);
+			send_private_msg(oldnick, "%sCHATSRV: Cannot change nickname. Nickname already in use.%s\r\n", 
+				color_yellow, color_normal);
+			logline(LOG_INFO, "Private message from CHATSRV to %s: Cannot change nickname. Nickname already in use", 
+				oldnick);
 		}
 	}
 	
@@ -514,8 +517,10 @@ void process_msg(char *message, int self_sockfd)
 		priv_list_entry = llist_find_by_nickname(&list_start, priv_nick);
 		if (priv_list_entry != NULL)
 		{
-			send_private_msg(priv_nick, "%s%s:%s %s%s%s\r\n", color_green, priv_list_entry->client_info->nickname, color_normal, color_red, buffer, color_normal);
-			logline(LOG_INFO, "Private message from %s to %s: %s", list_entry->client_info->nickname, priv_nick, buffer);
+			send_private_msg(priv_nick, "%s%s:%s %s%s%s\r\n", color_green, list_entry->client_info->nickname, 
+				color_normal, color_red, buffer, color_normal);
+			logline(LOG_INFO, "Private message from %s to %s: %s", 
+				list_entry->client_info->nickname, priv_nick, buffer);
 		}
 	}
 	
@@ -700,7 +705,8 @@ void change_nickname(char *oldnickname, char *newnickname)
 	/*Lock entry */
 	pthread_mutex_lock(list_entry->mutex);
 	
-	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", list_entry->client_info->nickname);
+	logline(LOG_DEBUG, "change_nickname(): client_info found. client_info->nickname = %s", 
+		list_entry->client_info->nickname);
 	
 	/* Update nickname */
 	strcpy(list_entry->client_info->nickname, newnickname);
