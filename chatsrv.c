@@ -583,11 +583,9 @@ void send_welcome_msg(int sockfd)
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	sprintf(buffer, "%s|             W E L C O M E   T O             |%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
-	sprintf(buffer, "%s|                  %s %s                |%s\r\n", color_white, APP_NAME, APP_VERSION, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);

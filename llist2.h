@@ -42,3 +42,4 @@ list_entry* llist_find_by_nickname(list_entry *list_start, char *nickname);
 int llist_change_by_sockfd(list_entry *list_start, client_info *element, int sockfd);
 int llist_show(list_entry *list_start);
 int llist_get_count(list_entry *list_start);
+int llist_get_nicknames(list_entry *list_start, char** nicks);

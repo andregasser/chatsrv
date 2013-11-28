@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <netinet/in.h>
 #include "llist2.h"
 #include "log.h"
@@ -288,6 +289,38 @@ int llist_get_count(list_entry *list_start)
 		pthread_mutex_unlock(cur->mutex);
 		
 		/* Load next entry */	
+		cur = cur->next;
+	}
+	
+	return count;
+}
+
+/*
+ * Build string array of currently connected clients
+ */
+int llist_get_nicknames(list_entry *list_start, char **nicks)
+{
+	list_entry *cur;
+
+	cur = list_start;
+
+	int count = 0;
+	
+	while (cur != NULL)
+	{
+		/* Lock entry */
+		pthread_mutex_lock(cur->mutex);
+		
+		/* Display client info */
+		if (cur->client_info != NULL)
+		{
+			strncpy(nicks[count++], cur->client_info->nickname, 20);
+		}
+		
+		/* Unlock entry */
+		pthread_mutex_unlock(cur->mutex);
+		
+		/* Load next entry */
 		cur = cur->next;
 	}
 	
