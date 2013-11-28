@@ -1,7 +1,7 @@
 .PHONY: log.o llist.o chatsrv.o chatsrv 
 
 # Set compiler to use
-CC=clang
+CC=gcc
 CFLAGS=
 DEBUG=0
 
