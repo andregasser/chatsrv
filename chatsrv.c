@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 		
 		/* Accept a client connection */
 		client_len = sizeof(client_address);
-		client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_address, &client_len);
+		client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_address, (socklen_t *)&client_len);
 
 		if (client_sockfd > 0)
 		{
@@ -405,6 +405,7 @@ void process_msg(char *message, int self_sockfd)
 	regex_t regex_nick;
 	regex_t regex_msg;
 	regex_t regex_me;
+	regex_t regex_who;
 	int ret;
 	char newnick[20];
 	char oldnick[20];
@@ -433,6 +434,7 @@ void process_msg(char *message, int self_sockfd)
 	regcomp(&regex_nick, "^/nick ([a-zA-Z0-9_]{1,19})$", REG_EXTENDED);
 	regcomp(&regex_msg, "^/msg ([a-zA-Z0-9_]{1,19}) (.*)$", REG_EXTENDED);
 	regcomp(&regex_me, "^/me (.*)$", REG_EXTENDED);
+	regcomp(&regex_who, "^/who$", REG_EXTENDED);
 
 	/* Check if user wants to quit */
 	ret = regexec(&regex_quit, message, 0, NULL, 0);
@@ -542,6 +544,34 @@ void process_msg(char *message, int self_sockfd)
 		send_broadcast_msg("%s%s%s\r\n", color_cyan, buffer, color_normal);
 		logline(LOG_INFO, buffer);
 	}
+
+	/* Check if user wants a listing of currently connected clients */
+	ret = regexec(&regex_who, message, 0, NULL, 0);
+	if (ret == 0)
+	{
+		processed = TRUE;
+
+		int socklen = sizeof(list_entry->client_info->address);
+
+		logline(LOG_INFO, "%s requested the client list", list_entry->client_info->nickname);
+
+		char **nicks = malloc(sizeof(*nicks) * 1000);
+		int i;
+		for (i = 0; i < 1000; i++)
+			nicks[i] = malloc(sizeof(**nicks) * 30);
+		int count = llist_get_nicknames(&list_start, nicks);
+
+		memset(buffer, 0, 1024);
+		for (i = 0; i < count; i++) {
+			sprintf(buffer, "%s%s%s%s", buffer, color_magenta, nicks[i], color_normal);
+			if(i != (count - 1)) sprintf(buffer, "%s, ", buffer);
+			if(i == (count - 1)) sprintf(buffer, "%s\r\n", buffer);
+			free(nicks[i]);
+		}
+		sendto(list_entry->client_info->sockfd, buffer, strlen(buffer), 0,
+				(struct sockaddr *)&(list_entry->client_info->address), (socklen_t)socklen);
+		free(nicks);
+	}
 	
 	/* Broadcast message */
 	if (processed == FALSE)
@@ -558,6 +588,7 @@ void process_msg(char *message, int self_sockfd)
 	regfree(&regex_nick);
 	regfree(&regex_msg);
 	regfree(&regex_me);
+	regfree(&regex_who);
 }
 
 
@@ -583,9 +614,11 @@ void send_welcome_msg(int sockfd)
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
+	sprintf(buffer, "%s|            C S 2 2 3 0   C H A T            |%s\r\n", color_white, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
+	sprintf(buffer, "%s|             Running %s %s             |%s\r\n", color_white, APP_NAME, APP_VERSION, color_normal);
 	sendto(cur->client_info->sockfd, buffer, strlen(buffer), 0,
 		(struct sockaddr *)&(cur->client_info->address), (socklen_t)socklen);
 	memset(buffer, 0, 1024);
