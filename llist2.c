@@ -118,12 +118,18 @@ int llist_remove_by_sockfd(list_entry *list_start, int sockfd)
 		/* Lock entry */
 		pthread_mutex_lock(cur->mutex);	
 	
-		/* Delete client_info data if sockfd matches */
-		if (cur->client_info->sockfd == sockfd)
+		/* Need to check if there's client in node */
+		if (cur->client_info != NULL)
 		{
-			cur->client_info = NULL;
-			pthread_mutex_unlock(cur->mutex);
-			break;
+
+			/* Delete client_info data if sockfd matches */
+			if (cur->client_info->sockfd == sockfd)
+			{
+				cur->client_info = NULL;
+				pthread_mutex_unlock(cur->mutex);
+				break;
+			}
+
 		}
 	
 		/* Unlock entry */
@@ -150,14 +156,20 @@ list_entry* llist_find_by_sockfd(list_entry *list_start, int sockfd)
 	{
 		/* Lock entry */
 		pthread_mutex_lock(cur->mutex);	
-	
-		/* Delete client_info data if sockfd matches */
-		if (cur->client_info->sockfd == sockfd)
+
+		/* Need to check if there's client in node */
+		if (cur->client_info != NULL)
 		{
-			pthread_mutex_unlock(cur->mutex);
-			return cur;
-		}
 	
+			/* Delete client_info data if sockfd matches */
+			if (cur->client_info->sockfd == sockfd)
+			{
+				pthread_mutex_unlock(cur->mutex);
+				return cur;
+			}
+
+		}
+
 		/* Unlock entry */
 		pthread_mutex_unlock(cur->mutex);
 	
@@ -179,12 +191,18 @@ list_entry* llist_find_by_nickname(list_entry *list_start, char *nickname)
 	{
 		/* Lock entry */
 		pthread_mutex_lock(cur->mutex);	
-	
-		/* Delete client_info data if sockfd matches */
-		if (strcmp(cur->client_info->nickname, nickname) == 0)
+
+		/* Need to check if there's client in node */
+		if (cur->client_info != NULL)
 		{
-			pthread_mutex_unlock(cur->mutex);
-			return cur;
+	
+			/* Delete client_info data if sockfd matches */
+			if (strcmp(cur->client_info->nickname, nickname) == 0)
+			{
+				pthread_mutex_unlock(cur->mutex);
+				return cur;
+			}
+
 		}
 	
 		/* Unlock entry */
@@ -211,13 +229,19 @@ int llist_change_by_sockfd(list_entry *list_start, client_info *element, int soc
 	{
 		/* Lock entry */
 		pthread_mutex_lock(cur->mutex);	
-	
-		/* Delete client_info data if sockfd matches */
-		if (cur->client_info->sockfd == sockfd)
+
+		/* Need to check if there's client in node */
+		if (cur->client_info != NULL)
 		{
-			cur->client_info = element;
-			pthread_mutex_unlock(cur->mutex);
-			return 0;
+	
+			/* Delete client_info data if sockfd matches */
+			if (cur->client_info->sockfd == sockfd)
+			{
+				cur->client_info = element;
+				pthread_mutex_unlock(cur->mutex);
+				return 0;
+			}
+
 		}
 	
 		/* Unlock entry */
